@@ -9,7 +9,7 @@
 replicaCount: 2
 image:
   repository: ghcr.io/csshubhamcs/user-service
-  tag: dev
+  tag: eea5be27fe2c5cfa777054302b33d0bd95dcc145
 autoscaling:
   enabled: true
   minReplicas: 2

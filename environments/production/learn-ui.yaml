@@ -2,7 +2,7 @@
 replicaCount: 2                 # two pods so a rolling update never drops to zero
 image:
   repository: ghcr.io/csshubhamcs/learn-ui
-  tag: REPLACE_WITH_COMMIT_SHA
+  tag: 2515e57d82ba8c1ca5d892973e049a95156ee8a1
 autoscaling:
   enabled: false
 resources:
