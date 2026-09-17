@@ -1,7 +1,7 @@
 # production — floci EKS cluster "learn-production" on the Oracle box
 replicaCount: 2                 # two pods so a rolling update never drops to zero
 image:
-  repository: REPLACE_ECR_OR_REGISTRY/learn-ui
+  repository: ghcr.io/csshubhamcs/learn-ui
   tag: REPLACE_WITH_COMMIT_SHA
 autoscaling:
   enabled: false

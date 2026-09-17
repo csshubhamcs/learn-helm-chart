@@ -8,7 +8,7 @@
 # Everything else — the chart, the probes, the PDB, the HTTPRoute — is unchanged.
 replicaCount: 2
 image:
-  repository: REPLACE_ECR_OR_REGISTRY/task-service
+  repository: ghcr.io/csshubhamcs/task-service
   tag: dev
 autoscaling:
   enabled: true

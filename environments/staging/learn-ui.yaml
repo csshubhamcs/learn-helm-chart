@@ -1,7 +1,7 @@
 # staging — floci EKS cluster "learn-staging" on the Oracle box
 replicaCount: 1                 # static files; one pod is plenty
 image:
-  repository: REPLACE_ECR_OR_REGISTRY/learn-ui
+  repository: ghcr.io/csshubhamcs/learn-ui
   tag: REPLACE_WITH_COMMIT_SHA
 autoscaling:
   enabled: false

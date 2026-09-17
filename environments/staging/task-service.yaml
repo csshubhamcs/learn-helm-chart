@@ -1,7 +1,7 @@
 # staging — floci EKS cluster "learn-staging" on the Oracle box
 replicaCount: 1                 # 12 GB box shared with production; one pod is enough here
 image:
-  repository: REPLACE_ECR_OR_REGISTRY/task-service
+  repository: ghcr.io/csshubhamcs/task-service
   tag: dev
 autoscaling:
   enabled: false                # no load to autoscale against
