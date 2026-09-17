@@ -1,0 +1,74 @@
+replicaCount: 3          # 3, not 2 — Infinispan needs quorum for cache ownership
+image:
+  tag: "26.7.3"
+resources:
+  requests: { cpu: 500m, memory: 1280Mi }   # KC's own guidance: ~1250Mi base + caches
+  limits:   { memory: 2Gi }
+# Realm as code. Without this the realm user-service points its JWT issuer-uri at
+# simply does not exist, and every token request 404s. Create the ConfigMap from
+# the realm export first:
+#   kubectl -n platform create configmap keycloak-realm \
+#     --from-file=realm-export.json=../learn/keycloak/realm-export.json
+# Which environment's secrets to read. Deliberately has NO default: a wrong or
+# missing value here means reading another environment's admin password.
+secretPrefix: ""
+
+realm: p-platform            # must match the realm name inside realm-export.json
+
+# Grants the user-service service account its realm-management roles, relaxes the
+# declarative user profile, and enables UPDATE_EMAIL. Without this, registration
+# fails on the cluster while working in local docker-compose.
+bootstrap:
+  enabled: true
+  userProfileConfigMap: keycloak-user-profile
+
+# Email. Keycloak sends every email on this platform — the Spring app has
+# spring-boot-starter-mail on the classpath but never calls JavaMailSender.
+#
+# The password is NOT here and never will be. It arrives through Keycloak's file
+# vault: External Secrets writes it to a file named <realm>_smtp-password, and the
+# realm config references it as ${vault.smtp-password}.
+smtp:
+  enabled: false
+  host: smtp.gmail.com
+  port: "587"
+  from: ""                   # must equal the authenticated Gmail account
+  fromDisplayName: "P Platform"
+  user: ""                   # the same Gmail address
+  ssl: "false"
+  starttls: "true"           # 587 is STARTTLS; use ssl=true + port 465 instead, never both
+  # remoteKey of the Gmail App Password in AWS Secrets Manager
+  passwordRemoteKey: ""      # e.g. /learn/staging/smtp-password
+  # Turn on while debugging a send failure. Gmail's real 535 reply is a NESTED cause,
+  # so the send failures logged by org.keycloak.services are where the answer is.
+  debugLogging: false
+
+realmImport:
+  enabled: false
+  existingConfigMap: keycloak-realm
+
+service:
+  type: ClusterIP       # NodePort in the floci environments, so an ALB can target it
+  nodePort: ""          # let Kubernetes pick unless pinned per environment
+
+database:
+  # url is set per environment — environments/<env>/keycloak.yaml.
+  url: ""
+  # ONE Postgres instance holds BOTH databases (userdb and keycloak), so both services
+  # log in as the instance's master user. Give Keycloak its own Postgres role later if
+  # you want; today that would be two extra SQL statements for no benefit at this scale.
+  username: postgres
+externalSecret:
+  storeName: secret-manager
+
+# KC_HOSTNAME. Keycloak stamps this into every token it issues (the "issuer" claim),
+# and user-service refuses a token whose issuer is not exactly what it expects. Nothing
+# here is exposed publicly, so the address that is true from inside the cluster is the
+# service name — and it matches user-service's KEYCLOAK_URL character for character.
+#
+# To open the admin console in a browser:
+#   kubectl -n platform port-forward svc/keycloak 8080:8080   ->  http://localhost:8080
+#
+# Same in both environments while there is no ingress, so it lives here and not in
+# environments/*/keycloak.yaml. The day a real DNS name exists, move it there.
+hostname: http://keycloak.platform:8080

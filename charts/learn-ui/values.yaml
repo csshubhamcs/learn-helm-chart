@@ -1,0 +1,38 @@
+replicaCount: 2
+
+image:
+  repository: ""      # set per environment
+  tag: ""             # commit SHA, set by hand from the learn-ui CI job summary
+
+imagePullSecrets: []
+
+service:
+  port: 8080          # nginx listens on 8080, not 80: ports below 1024 need privileges
+                      # this container deliberately drops
+
+serviceAccount:
+  annotations: {}
+
+# Static files. A tenth of what a JVM needs, and the limits should say so rather than
+# copying the service values out of habit.
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { memory: 128Mi }
+
+autoscaling:
+  enabled: false      # nginx serving a 300 kB bundle does not need to scale on CPU
+
+# There is NO externalSecret here, and that is the point: this container holds no secret.
+# web-app is a public OAuth client — PKCE is what replaces a secret for a browser app — so
+# everything below is public by design and ships to every visitor anyway.
+#
+# These are read at RUNTIME by the container's entrypoint, which writes /config.js before
+# nginx starts. That is what lets ONE image serve every environment, so the exact bytes
+# tested in staging are the bytes promoted to production.
+env:
+  KEYCLOAK_REALM: p-platform
+  KEYCLOAK_CLIENT_ID: web-app
+  # set per environment — these are browser-facing public URLs
+  KEYCLOAK_URL: ""
+  USER_API: ""
+  TASK_API: ""

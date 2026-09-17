@@ -1,0 +1,88 @@
+{{- include "user-service.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "user-service.fullname" . }}
+  labels: {{- include "user-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  {{- /* When an HPA owns this Deployment the chart must NOT also set replicas, or
+         every sync resets the count the HPA just chose and the two fight forever. */}}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0        # never drop below current capacity during a deploy
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "user-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "user-service.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: {{ .Values.service.port | quote }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "user-service.fullname" . }}
+      terminationGracePeriodSeconds: 45   # > the app's 30s graceful drain
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001        # without this the process runs with GID 0
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: topology.kubernetes.io/zone
+                labelSelector:
+                  matchLabels: {{- include "user-service.selectorLabels" . | nindent 20 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          startupProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            failureThreshold: 30
+            periodSeconds: 5          # allows up to 150s for a cold JVM start
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: SERVER_PORT
+              value: {{ .Values.service.port | quote }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.externalSecret.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "user-service.fullname" . }}-secrets
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}      # readOnlyRootFilesystem still needs somewhere writable

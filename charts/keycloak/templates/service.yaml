@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  type: {{ (.Values.service | default dict).type | default "ClusterIP" }}
+  sessionAffinity: ClientIP       # keeps a user on one pod for the duration of login
+  sessionAffinityConfig:
+    clientIP: { timeoutSeconds: 3600 }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      {{- if and (eq ((.Values.service | default dict).type | default "ClusterIP") "NodePort") (.Values.service | default dict).nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+  selector: { app.kubernetes.io/name: keycloak }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-headless
+spec:
+  clusterIP: None                 # headless: required for Infinispan DNS discovery
+  publishNotReadyAddresses: true  # members must find each other before they are ready
+  ports:
+    - { name: jgroups, port: 7800 }
+  selector: { app.kubernetes.io/name: keycloak }

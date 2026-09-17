@@ -1,0 +1,51 @@
+replicaCount: 2
+
+image:
+  repository: ""      # set per environment
+  tag: ""             # commit SHA, set by hand from the learn CI job summary
+
+# Only needed if the registry package is private:
+#   kubectl -n platform create secret docker-registry ghcr \
+#     --docker-server=ghcr.io --docker-username=<you> --docker-password=<PAT with read:packages>
+imagePullSecrets: []
+
+service:
+  port: 7701           # user-service listens on 7701 (SERVER_PORT)
+
+serviceAccount:
+  annotations: {}      # on real AWS: eks.amazonaws.com/role-arn for IRSA
+
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits:   { memory: 1Gi }          # no CPU limit: throttling a JVM hurts p99 latency
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPU: 70
+
+externalSecret:
+  enabled: true
+  storeName: aws-secrets-staging
+  # remoteKey names the secret in AWS Secrets Manager. The environment is in the path
+  # because both environments share one floci account — flat names would let staging
+  # read production's database password.
+  keys:
+    - { envVar: DB_PASSWORD,            remoteKey: /learn/staging/app-db-password }
+    - { envVar: KEYCLOAK_CLIENT_SECRET, remoteKey: /learn/staging/keycloak-client-secret }
+
+env:
+  KEYCLOAK_REALM: p-platform        # must match the realm name in keycloak/realm-export.json
+  KEYCLOAK_CLIENT_ID: user-service
+  # Master user of the ONE "learn-db" Postgres instance. Both databases inside it
+  # (userdb and keycloak) are reached with this same login.
+  DB_USERNAME: postgres
+  # The default for every environment. staging overrides it to DEBUG in
+  # environments/staging/user-service.yaml; production does not override it at all.
+  LOG_LEVEL: INFO
+  # application.properties reads ${MAIL_HOST} and ${MAIL_PORT} with NO default, so
+  # Spring fails to start if they are absent. No mail server is deployed yet; these
+  # only satisfy the placeholder — sending will fail until something listens there.
+  MAIL_HOST: mailpit.platform
+  MAIL_PORT: "1025"

@@ -1,0 +1,23 @@
+# staging — floci EKS cluster "learn-staging"
+replicaCount: 1                 # single node: Infinispan quorum buys nothing here
+image:
+  tag: "26.7.3"
+resources:
+  requests: { cpu: 250m, memory: 768Mi }
+  limits:   { memory: 1280Mi }
+service:
+  type: NodePort
+  nodePort: 30080
+database:
+  # Same instance, same host, same port as user-service's DB_URL — only the database
+  # name after the last "/" is different. ONE "learn-db" instance, TWO databases.
+  url: jdbc:postgresql://REPLACE_RDS_HOST:REPLACE_RDS_PORT/keycloak
+realmImport:
+  enabled: true          # needs the keycloak-realm ConfigMap — see docs/06-deploy-and-promote.html
+externalSecret:
+  storeName: aws-secrets-staging
+secretPrefix: /learn/staging
+# hostname lives in charts/keycloak/values.yaml because it is the same in both
+# environments while nothing is exposed publicly. Once there is an ingress and a real
+# DNS name, uncomment the line below — that is the moment it becomes per-environment.
+# hostname: https://auth.staging.shubhamsinghrajput.com

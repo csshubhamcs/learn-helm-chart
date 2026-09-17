@@ -1,0 +1,5 @@
+# never commit a rendered secret or a local env file
+.env
+*-secret.yaml
+
+.DS_Store

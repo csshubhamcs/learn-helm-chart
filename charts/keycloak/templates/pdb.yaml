@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+spec:
+  {{- if ge (int .Values.replicaCount) 3 }}
+  minAvailable: 2
+  {{- else if eq (int .Values.replicaCount) 1 }}
+  maxUnavailable: 1     # one replica: minAvailable would block node drains forever
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: keycloak }

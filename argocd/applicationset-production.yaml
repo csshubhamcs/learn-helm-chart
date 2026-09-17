@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: learn-production
+  namespace: argocd
+spec:
+  # goTemplate for sprig; the legacy filenameNormalized would yield "user-service-yaml".
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: REPLACE_REPO_URL
+        revision: main
+        files:
+          # environments/<env>/<name>.yaml pairs with charts/<name>/. Break that and
+          # the generated Application points at a chart path that does not exist.
+          - path: environments/production/*.yaml
+  template:
+    metadata:
+      name: '{{ trimSuffix ".yaml" .path.filename }}-production'
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      labels:
+        learn.env: production
+        learn.service: '{{ trimSuffix ".yaml" .path.filename }}'
+    spec:
+      project: default
+      source:
+        repoURL: REPLACE_REPO_URL
+        targetRevision: main
+        path: 'charts/{{ trimSuffix ".yaml" .path.filename }}'
+        helm:
+          releaseName: '{{ trimSuffix ".yaml" .path.filename }}'
+          valueFiles:
+            - '../../environments/production/{{ .path.filename }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: platform
+      syncPolicy:
+        # No automated block: production waits for a human to press Sync.
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff: { duration: 5s, factor: 2, maxDuration: 3m }

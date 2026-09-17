@@ -1,0 +1,54 @@
+{{- include "learn-ui.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "learn-ui.fullname" . }}
+  labels: {{- include "learn-ui.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "learn-ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "learn-ui.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "learn-ui.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Satisfies the namespace's "restricted" Pod Security Standard. Without these the
+      # pod is REJECTED at admission rather than starting and misbehaving.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: learn-ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # nginx writes its pid and temp files
+            capabilities: { drop: ["ALL"] }
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          # /healthz is a plain 200 from nginx, deliberately NOT the SPA fallback: with
+          # try_files every unknown path returns index.html with status 200, so a fallback
+          # route would report healthy no matter what.
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources: {{- toYaml .Values.resources | nindent 12 }}

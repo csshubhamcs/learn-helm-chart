@@ -1,0 +1,27 @@
+# production — floci EKS cluster "learn-production"
+#
+# On real AWS this becomes replicaCount: 3 (Infinispan wants quorum) with the
+# resources below roughly doubled. One replica here is a deliberate concession to
+# a 2 OCPU / 12 GB box, not a recommendation.
+replicaCount: 1
+image:
+  tag: "26.7.3"
+resources:
+  requests: { cpu: 300m, memory: 1Gi }
+  limits:   { memory: 1536Mi }
+service:
+  type: NodePort
+  nodePort: 30081
+database:
+  # Same instance, same host, same port as user-service's DB_URL — only the database
+  # name after the last "/" is different. ONE "learn-db" instance, TWO databases.
+  url: jdbc:postgresql://REPLACE_RDS_HOST:REPLACE_RDS_PORT/keycloak
+realmImport:
+  enabled: true          # needs the keycloak-realm ConfigMap — see docs/06-deploy-and-promote.html
+externalSecret:
+  storeName: aws-secrets-production
+secretPrefix: /learn/production
+# hostname lives in charts/keycloak/values.yaml because it is the same in both
+# environments while nothing is exposed publicly. Once there is an ingress and a real
+# DNS name, uncomment the line below — that is the moment it becomes per-environment.
+# hostname: https://auth.shubhamsinghrajput.com

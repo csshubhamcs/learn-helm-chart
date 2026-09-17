@@ -1,0 +1,43 @@
+# production — floci EKS cluster "learn-production" on the Oracle box.
+#
+# When this moves to REAL AWS, exactly these lines change:
+#   image.repository  -> <acct>.dkr.ecr.<region>.amazonaws.com/task-service
+#   image.tag         -> the commit SHA, written by CI (never "dev", never "latest")
+#   env.DB_URL        -> the real RDS endpoint
+#   externalSecret.storeName -> a store using IRSA instead of static keys
+# Everything else — the chart, the probes, the PDB, the HTTPRoute — is unchanged.
+replicaCount: 2
+image:
+  repository: REPLACE_ECR_OR_REGISTRY/task-service
+  tag: dev
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4                # ceiling set by the 12 GB box, not by the app
+  targetCPU: 70
+resources:
+  requests: { cpu: 150m, memory: 512Mi }
+  limits:   { memory: 1Gi }
+service:
+  type: NodePort
+  nodePort: 30774
+externalSecret:
+  storeName: aws-secrets-production
+  keys:
+    - { envVar: DB_PASSWORD, remoteKey: /learn/production/app-db-password }
+env:
+  # ONE Postgres instance ("learn-db"), THREE databases inside it. This URL and the
+  # ones in user-service.yaml and keycloak.yaml share a host and a port; only the
+  # name after the last "/" differs.
+  DB_URL: jdbc:postgresql://REPLACE_RDS_HOST:REPLACE_RDS_PORT/taskdb
+  # MUST be the PUBLIC url, not the in-cluster one. This single variable drives
+  # spring.security.oauth2.resourceserver.jwt.issuer-uri, and Keycloak stamps its --hostname
+  # into every token's `iss`. An internal value here means the token says
+  # https://keycloak.<domain> while the service expects http://keycloak.platform:8080, and
+  # EVERY request fails with a bare 401 that names nothing.
+  KEYCLOAK_URL: https://keycloak.shubhamsinghrajput.com
+  CORS_ALLOWED_ORIGINS: https://learn.shubhamsinghrajput.com
+  SPRING_PROFILES_ACTIVE: prod
+  # No LOG_LEVEL here on purpose. charts/task-service/values.yaml already says INFO,
+  # and production wants INFO — so there is nothing to override. Only staging sets it
+  # (to DEBUG), because only staging differs from the chart default.

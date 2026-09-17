@@ -1,0 +1,24 @@
+# staging — floci EKS cluster "learn-staging" on the Oracle box
+replicaCount: 1                 # static files; one pod is plenty
+image:
+  repository: REPLACE_ECR_OR_REGISTRY/learn-ui
+  tag: REPLACE_WITH_COMMIT_SHA
+autoscaling:
+  enabled: false
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { memory: 128Mi }
+service:
+  type: NodePort                # so a floci ALB target group can reach it
+  nodePort: 30090
+env:
+  KEYCLOAK_REALM: p-platform
+  KEYCLOAK_CLIENT_ID: web-app
+  # These are the URLs the BROWSER uses, so they are the public Cloudflare hostnames —
+  # never the in-cluster service names. A browser cannot resolve "user-service:7701".
+  #
+  # KEYCLOAK_URL must also match, character for character, the issuer the services and the
+  # API gateway are configured with. A mismatch fails every request with a bare 401.
+  KEYCLOAK_URL: https://keycloak-staging.shubhamsinghrajput.com
+  USER_API: https://api-staging.shubhamsinghrajput.com
+  TASK_API: https://api-staging.shubhamsinghrajput.com

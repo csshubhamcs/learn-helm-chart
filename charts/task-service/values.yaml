@@ -1,0 +1,46 @@
+replicaCount: 2
+
+image:
+  repository: ""      # set per environment
+  tag: ""             # commit SHA, set by hand from the learn CI job summary
+
+# Only needed if the registry package is private:
+#   kubectl -n platform create secret docker-registry ghcr \
+#     --docker-server=ghcr.io --docker-username=<you> --docker-password=<PAT with read:packages>
+imagePullSecrets: []
+
+service:
+  port: 7702           # task-service listens on 7702 (SERVER_PORT)
+
+serviceAccount:
+  annotations: {}      # on real AWS: eks.amazonaws.com/role-arn for IRSA
+
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits:   { memory: 1Gi }          # no CPU limit: throttling a JVM hurts p99 latency
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPU: 70
+
+externalSecret:
+  enabled: true
+  storeName: aws-secrets-staging
+  # remoteKey names the secret in AWS Secrets Manager. The environment is in the path
+  # because both environments share one floci account — flat names would let staging
+  # read production's database password.
+  keys:
+    - { envVar: DB_PASSWORD, remoteKey: /learn/staging/app-db-password }
+
+env:
+  KEYCLOAK_REALM: p-platform        # must match the realm name in keycloak/realm-export.json
+  # task-service validates JWTs locally against the realm's JWKS — it never calls the
+  # Keycloak Admin API, so unlike user-service it has no KEYCLOAK_CLIENT_ID/SECRET.
+  # Master user of the ONE "learn-db" Postgres instance. All three databases inside it
+  # (userdb, taskdb and keycloak) are reached with this same login.
+  DB_USERNAME: postgres
+  # The default for every environment. staging overrides it to DEBUG in
+  # environments/staging/task-service.yaml; production does not override it at all.
+  LOG_LEVEL: INFO

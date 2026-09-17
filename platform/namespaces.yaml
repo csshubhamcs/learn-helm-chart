@@ -1,0 +1,11 @@
+# The pods these charts render already satisfy the `restricted` Pod Security Standard
+# (non-root, no privilege escalation, all capabilities dropped, seccomp RuntimeDefault).
+# Labelling the namespace turns that from a property into an enforced rule: anything
+# that does not comply is rejected at admission, including what you did not render.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

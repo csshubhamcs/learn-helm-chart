@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "task-service.fullname" . }}
+  labels: {{- include "task-service.labels" . | nindent 4 }}
+spec:
+  {{- /* At ONE replica a minAvailable of 1 blocks every voluntary eviction forever —
+         the node could never be drained — so allow one disruption instead. */}}
+  {{- if ge (int .Values.replicaCount) 3 }}
+  minAvailable: 2
+  {{- else if eq (int .Values.replicaCount) 1 }}
+  maxUnavailable: 1
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+  selector:
+    matchLabels: {{- include "task-service.selectorLabels" . | nindent 6 }}

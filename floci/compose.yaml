@@ -1,0 +1,165 @@
+# ~/floci/compose.yaml   — no `version:` key, obsolete in Compose v2
+#
+# floci — a local AWS emulator — on an Oracle Ampere A1 (2 OCPU / 12 GB, ARM64).
+#
+# Drop this file on the server and run:   docker compose up -d
+# Nothing else is required. Data survives `down`, `restart` and reboot.
+#
+# Four things here are load-bearing and easy to get wrong:
+#
+#   1. FLOCI_STORAGE_MODE defaults to `memory` in the image. It MUST be overridden
+#      to `persistent` or every cluster, database and secret dies with the container.
+#
+#   2. Every port binds to 127.0.0.1. floci has NO authentication and holds the
+#      Docker socket, so anything that reaches 4566 owns this machine. You reach
+#      it over an SSH tunnel, never over the public interface.
+#
+#   3. The network has a FIXED subnet and floci has a STATIC address. Docker
+#      otherwise reassigns container IPs on restart, and this platform bakes
+#      floci's IP into the External Secrets deployment — a reassignment makes
+#      secret syncing fail silently. Pinning it removes that whole class of bug.
+#
+#   4. `floci-init` exists so that a bare `docker compose up -d` works on a fresh
+#      box. A bind-mount directory Docker creates is owned by root, floci runs
+#      non-root, and persistent writes then fail with NO error to explain it —
+#      it looks exactly like "persistence is broken". The init one-shot creates
+#      the directory and opens its permissions before floci ever starts.
+name: floci
+
+networks:
+  default:
+    name: floci_default
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+services:
+  # ── One-shot. Runs to completion, then exits. Makes the stack self-installing.
+  floci-init:
+    image: alpine:3.20
+    container_name: floci-init
+    restart: "no"
+    command: sh -c 'mkdir -p /data && chmod 0777 /data && echo "data dir ready"'
+    volumes:
+      - ./data/aws:/data
+
+  floci-aws:
+    image: floci/floci:latest
+    container_name: floci-aws
+    restart: always
+    depends_on:
+      floci-init:
+        condition: service_completed_successfully
+    networks:
+      default:
+        ipv4_address: 172.28.0.10       # stable forever — referenced by ESO and by you
+    ports:
+      - "127.0.0.1:4566:4566"           # the AWS API surface
+      - "127.0.0.1:7001-7099:7001-7099" # RDS   — PostgreSQL instances
+      - "127.0.0.1:5100-5199:5100-5199" # ECR   — image push/pull
+      - "127.0.0.1:8090-8099:8090-8099" # ELBv2 — ALB listeners
+    environment:
+      FLOCI_STORAGE_MODE: persistent               # image default is `memory` — MUST override
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_SERVICES_DOCKER_NETWORK: floci_default # sibling containers join this network
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_DEFAULT_ACCOUNT_ID: "000000000000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # REQUIRED: floci starts real k3s + Postgres
+      - ./data/aws:/app/data                       # control-plane state, on the host
+    healthcheck:
+      # The floci image ships no curl, wget or nc — a curl-based healthcheck fails
+      # forever, and floci-ui then never starts because it waits on service_healthy.
+      # bash's /dev/tcp is built in and always present.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/4566"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }   # else logs fill a 200 GB boot volume
+
+  floci-ui:
+    image: floci/floci-ui:latest
+    container_name: floci-ui
+    restart: always
+    ports:
+      - "127.0.0.1:4500:4500"
+    environment:
+      FLOCI_ENDPOINT: http://floci-aws:4566
+    depends_on:
+      floci-aws:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADDING A PROVIDER LATER
+#
+# Uncomment a block, then start ONLY that service:
+#     docker compose up -d floci-gcp
+#
+# floci-aws is not touched: your clusters, databases and secrets keep running.
+# Each provider gets its own data directory and its own pinned IP. Give any new
+# service an unused address in 172.28.0.0/16 and an unused host port.
+# ─────────────────────────────────────────────────────────────────────────────
+
+  # floci-gcp:
+  #   image: floci/floci-gcp:latest
+  #   container_name: floci-gcp
+  #   restart: always
+  #   networks:
+  #     default:
+  #       ipv4_address: 172.28.0.11
+  #   ports:
+  #     - "127.0.0.1:4588:4588"
+  #   environment:
+  #     FLOCI_GCP_STORAGE_MODE: persistent
+  #     FLOCI_GCP_STORAGE_PERSISTENT_PATH: /app/data
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./data/gcp:/app/data
+  #   logging:
+  #     driver: json-file
+  #     options: { max-size: "10m", max-file: "3" }
+
+  # floci-azure:
+  #   image: floci/floci-azure:latest
+  #   container_name: floci-azure
+  #   restart: always
+  #   networks:
+  #     default:
+  #       ipv4_address: 172.28.0.12
+  #   ports:
+  #     - "127.0.0.1:4599:4599"
+  #   environment:
+  #     FLOCI_AZURE_STORAGE_MODE: persistent
+  #     FLOCI_AZURE_STORAGE_PERSISTENT_PATH: /app/data
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./data/azure:/app/data
+  #   logging:
+  #     driver: json-file
+  #     options: { max-size: "10m", max-file: "3" }
+
+  # floci-oci:
+  #   image: floci/floci-oci:latest
+  #   container_name: floci-oci
+  #   restart: always
+  #   networks:
+  #     default:
+  #       ipv4_address: 172.28.0.13
+  #   ports:
+  #     - "127.0.0.1:4577:4577"
+  #   environment:
+  #     FLOCI_OCI_STORAGE_MODE: persistent
+  #     FLOCI_OCI_STORAGE_PERSISTENT_PATH: /app/data
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./data/oci:/app/data
+  #   logging:
+  #     driver: json-file
+  #     options: { max-size: "10m", max-file: "3" }

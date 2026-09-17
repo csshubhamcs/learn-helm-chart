@@ -1,0 +1,33 @@
+# staging — floci EKS cluster "learn-staging" on the Oracle box
+replicaCount: 1                 # 12 GB box shared with production; one pod is enough here
+image:
+  repository: REPLACE_ECR_OR_REGISTRY/user-service
+  tag: dev
+autoscaling:
+  enabled: false                # no load to autoscale against
+resources:
+  requests: { cpu: 100m, memory: 384Mi }
+  limits:   { memory: 768Mi }
+service:
+  type: NodePort                # so a floci ALB target group can reach it
+  nodePort: 30771
+externalSecret:
+  storeName: aws-secrets-staging
+  keys:
+    - { envVar: DB_PASSWORD,            remoteKey: /learn/staging/app-db-password }
+    - { envVar: KEYCLOAK_CLIENT_SECRET, remoteKey: /learn/staging/keycloak-client-secret }
+env:
+  # ONE Postgres instance ("learn-db"), TWO databases inside it. This URL and the one
+  # in keycloak.yaml share a host and a port; only the name after the last "/" differs.
+  # REPLACE_RDS_HOST / REPLACE_RDS_PORT come from:
+  #   aws rds describe-db-instances --query 'DBInstances[].[Endpoint.Address,Endpoint.Port]'
+  DB_URL: jdbc:postgresql://REPLACE_RDS_HOST:REPLACE_RDS_PORT/userdb
+  # MUST be the PUBLIC url, not the in-cluster one. This single variable drives
+  # spring.security.oauth2.resourceserver.jwt.issuer-uri, and Keycloak stamps its --hostname
+  # into every token's `iss`. An internal value here means the token says
+  # https://keycloak.<domain> while the service expects http://keycloak.platform:8080, and
+  # EVERY request fails with a bare 401 that names nothing.
+  KEYCLOAK_URL: https://keycloak-staging.shubhamsinghrajput.com
+  CORS_ALLOWED_ORIGINS: https://learn-staging.shubhamsinghrajput.com
+  SPRING_PROFILES_ACTIVE: staging
+  LOG_LEVEL: DEBUG
